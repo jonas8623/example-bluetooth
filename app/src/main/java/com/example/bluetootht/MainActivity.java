@@ -2,15 +2,18 @@ package com.example.bluetootht;
 
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
-import androidx.annotation.Nullable;
+import androidx.annotation.RequiresApi;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 
 import android.app.Activity;
 import android.bluetooth.BluetoothAdapter;
-import android.bluetooth.BluetoothDevice;
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.PackageManager;
+import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.View;
@@ -19,36 +22,74 @@ import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import java.util.Set;
-
 public class MainActivity extends AppCompatActivity {
 
     private static final int REQUEST_ENABLE_BLUETOOTH = 0;
     private static final int REQUEST_DISCOVERY_BLUETOOTH = 1;
+    private static final String TAG = "MainActivity";
 
     TextView textViewStatusBluetooth, textViewListPairedDevices;
     ImageView imageViewStatusBluetooth;
-    Button onButton, offButton, discoverableButton, pairedButton;
+    Button onOffButton, discoverableButton;
     BluetoothAdapter bluetoothAdapter;
 
-    ActivityResultLauncher<Intent> activityResultLauncher = registerForActivityResult(
-            new ActivityResultContracts.StartActivityForResult(),
-            result -> {
-                if (result.getResultCode() == Activity.RESULT_OK) {
-                    Log.e("Activity Result", "OK");
-                    Intent data = result.getData();
+    private final BroadcastReceiver myBroadcastReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            String action = intent.getAction();
+            if (action.equals(BluetoothAdapter.ACTION_STATE_CHANGED)) {
+                final int state = intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.ERROR);
+
+                switch (state) {
+                    case BluetoothAdapter.STATE_OFF:
+                        Log.d(TAG, "onReceiver: STATE OFF");
+                        break;
+                    case BluetoothAdapter.STATE_TURNING_OFF:
+                        Log.d(TAG, "broadcastReceiver: STATE TURNING OFF");
+                        break;
+                    case BluetoothAdapter.STATE_ON:
+                        Log.d(TAG, "broadcastReceiver: STATE ON");
+                        break;
+                    case BluetoothAdapter.STATE_TURNING_ON:
+                        Log.d(TAG, "broadcastReceiver: STATE TURNING ON");
+                        break;
                 }
             }
-    );
+        }
+    };
+
+    private final BroadcastReceiver myBroadcastReceiverDiscoverableBluetooth = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            final String action = intent.getAction();
+            if (action.equals(BluetoothAdapter.ACTION_SCAN_MODE_CHANGED)) {
+                final int mode = intent.getIntExtra(BluetoothAdapter.EXTRA_SCAN_MODE, BluetoothAdapter.ERROR);
+
+                switch (mode) {
+                    case BluetoothAdapter.SCAN_MODE_CONNECTABLE_DISCOVERABLE:
+                        Log.d(TAG, "Discoverability Enable");
+                        break;
+                    case BluetoothAdapter.SCAN_MODE_CONNECTABLE:
+                        Log.d(TAG, "Discoverability Enable. Able to receiver connections");
+                        break;
+                    case BluetoothAdapter.SCAN_MODE_NONE:
+                        Log.d(TAG, "Discoverability Disable. Not able to receiver connections");
+                        break;
+                    case BluetoothAdapter.STATE_CONNECTING:
+                        Log.d(TAG, "Connecting...");
+                        break;
+                    case BluetoothAdapter.STATE_CONNECTED:
+                        Log.d(TAG, "Connected");
+                        break;
+                }
+            }
+        }
+    };
 
     @Override
-    protected void onStart() {
-        super.onStart();
-    }
-
-    @Override
-    protected void onStop() {
-        super.onStop();
+    protected void onDestroy() {
+        super.onDestroy();
+        unregisterReceiver(myBroadcastReceiver);
     }
 
     @Override
@@ -56,135 +97,65 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        textViewStatusBluetooth = findViewById(R.id.textViewStatusBluetooth);
-        imageViewStatusBluetooth = findViewById(R.id.imageViewStatusBluetooth);
-        onButton = findViewById(R.id.onButton);
-        offButton = findViewById(R.id.offButton);
+        onOffButton = findViewById(R.id.onButton);
         discoverableButton = findViewById(R.id.discoverableButton);
-        pairedButton = findViewById(R.id.pairedButton);
-        textViewListPairedDevices = findViewById(R.id.textViewListPairedDevices);
 
         bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
 
-        if (bluetoothAdapter == null) {
-            textViewStatusBluetooth.setText("Bluetooth is not available");
-        } else {
-            textViewStatusBluetooth.setText("Bluetooth is available");
-        }
-
-        if (bluetoothAdapter.isEnabled()) {
-            imageViewStatusBluetooth.setImageResource(R.drawable.ic_action_on);
-        } else {
-            imageViewStatusBluetooth.setImageResource(R.drawable.ic_action_off);
-        }
-
-        onButton.setOnClickListener(new View.OnClickListener() {
+        onOffButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                if (!bluetoothAdapter.isEnabled()) {
-                    displayMessage("Turning On Bluetooth...");
-                    Intent intent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
-//                    activityResultLauncher.launch(intent);
-                    if (ActivityCompat.checkSelfPermission(getApplicationContext(), android.Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
-                        // TODO: Consider calling
-                        //    ActivityCompat#requestPermissions
-                        // here to request the missing permissions, and then overriding
-                        //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
-                        //                                          int[] grantResults)
-                        // to handle the case where the user grants the permission. See the documentation
-                        // for ActivityCompat#requestPermissions for more details.
-                        return;
-                    }
-                    startActivityForResult(intent, REQUEST_ENABLE_BLUETOOTH);
-                } else {
-                    displayMessage("Bluetooth is already on");
-                }
+                Log.d(TAG, "onClick: enable disable bluetooth");
+                enableDisableBluetooth();
             }
         });
 
         discoverableButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                if (ActivityCompat.checkSelfPermission(getApplicationContext(), android.Manifest.permission.BLUETOOTH_SCAN) != PackageManager.PERMISSION_GRANTED) {
-                    // TODO: Consider calling
-                    //    ActivityCompat#requestPermissions
-                    // here to request the missing permissions, and then overriding
-                    //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
-                    //                                          int[] grantResults)
-                    // to handle the case where the user grants the permission. See the documentation
-                    // for ActivityCompat#requestPermissions for more details.
-                    return;
-                }
-                if (!bluetoothAdapter.isDiscovering()) {
-                    displayMessage("Making your Device Discoverable");
-                    Intent intent = new Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE);
-                    startActivityForResult(intent, REQUEST_DISCOVERY_BLUETOOTH);
-//                    activityResultLauncher.launch(intent);
-                }
-            }
-        });
-
-        offButton.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                if (bluetoothAdapter.isEnabled()) {
-                    if (ActivityCompat.checkSelfPermission(getApplicationContext(), android.Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
-                        // TODO: Consider calling
-                        //    ActivityCompat#requestPermissions
-                        // here to request the missing permissions, and then overriding
-                        //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
-                        //                                          int[] grantResults)
-                        // to handle the case where the user grants the permission. See the documentation
-                        // for ActivityCompat#requestPermissions for more details.
-                        return;
-                    }
-                    bluetoothAdapter.disable();
-                    imageViewStatusBluetooth.setImageResource(R.drawable.ic_action_off);
-                } else {
-                    displayMessage("Bluetooth is already off");
-                }
-            }
-        });
-
-        pairedButton.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                if (bluetoothAdapter.isEnabled()) {
-                    textViewListPairedDevices.setText("Paired Devices");
-                    if (ActivityCompat.checkSelfPermission(getApplicationContext(), android.Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
-                        // TODO: Consider calling
-                        //    ActivityCompat#requestPermissions
-                        // here to request the missing permissions, and then overriding
-                        //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
-                        //                                          int[] grantResults)
-                        // to handle the case where the user grants the permission. See the documentation
-                        // for ActivityCompat#requestPermissions for more details.
-                        return;
-                    }
-                    Set<BluetoothDevice> devices = bluetoothAdapter.getBondedDevices();
-                    for (BluetoothDevice device: devices) {
-                        textViewListPairedDevices.append("\nDevice: " + device.getName() +"," + device);
-                    }
-                } else {
-                    displayMessage("Turn on bluetooth to get paired devices");
+                Log.d(TAG, "onClick: discoverable bluetooth");
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    discoverableEnableDisableBluetooth(view);
                 }
             }
         });
     }
 
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
-        switch (requestCode) {
-            case REQUEST_ENABLE_BLUETOOTH:
-                if(resultCode == RESULT_OK) {
-                    imageViewStatusBluetooth.setImageResource(R.drawable.ic_action_on);
-                    displayMessage("Bluetooth is on");
-                } else {
-                    displayMessage("Error connecting Bluetooth");
-                }
-                break;
+    public void enableDisableBluetooth() {
+        if (bluetoothAdapter == null) {
+            Log.d(TAG, "enableDisableBluetooth: error ");
         }
-        super.onActivityResult(requestCode, resultCode, data);
+        if (!bluetoothAdapter.isEnabled()) {
+            Intent enableBluetoothIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
+            if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
+                ActivityCompat.requestPermissions(this, new String[]{android.Manifest.permission.BLUETOOTH_CONNECT}, 0);
+                return;
+            }
+            startActivity(enableBluetoothIntent);
+            IntentFilter bluetoothIntent = new IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED);
+            registerReceiver(myBroadcastReceiver, bluetoothIntent);
+            displayMessage("Turning On Bluetooth...");
+        }
+        if (bluetoothAdapter.isEnabled()) {
+            bluetoothAdapter.disable();
+
+            IntentFilter bluetoothIntent = new IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED);
+            registerReceiver(myBroadcastReceiver, bluetoothIntent);
+        }
+    }
+
+    @RequiresApi(api = Build.VERSION_CODES.S)
+    public void discoverableEnableDisableBluetooth(View view) {
+        Intent discoverableIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE);
+        if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.BLUETOOTH_ADVERTISE) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, new String[]{android.Manifest.permission.BLUETOOTH_ADVERTISE}, 1);
+            return;
+        }
+        startActivity(discoverableIntent);
+        discoverableIntent.putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, 300);
+
+        IntentFilter intentFilter = new IntentFilter(bluetoothAdapter.ACTION_SCAN_MODE_CHANGED);
+        registerReceiver(myBroadcastReceiverDiscoverableBluetooth, intentFilter);
     }
 
     private void displayMessage(String message) {
